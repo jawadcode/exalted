@@ -1,0 +1,12 @@
+[package]
+name = "exalted"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+image = "0.25.2"
+rustybuzz = "0.18.0"
+softbuffer = "0.4.5"
+taffy = "0.5.2"
+tiny-skia = "0.11.4"
+winit = "0.30.5"
