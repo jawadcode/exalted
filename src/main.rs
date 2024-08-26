@@ -6,6 +6,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::Icon;
 
+mod editor;
 mod layout;
 mod winit_app;
 
