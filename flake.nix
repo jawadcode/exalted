@@ -36,7 +36,7 @@
       commonArgs = {
         src = let
           cargoOrIcon = path: type:
-            (path != ./exalted.png)
+            !(builtins.elem path [./exalted.png ./IosevkaTerm-Regular.ttf])
             || (craneLib.filterCargoSources path type);
         in
           lib.cleanSourceWith {

@@ -1,7 +1,9 @@
 use std::cell::RefCell;
 
 use taffy::{Layout, NodeId, TaffyTree};
-use tiny_skia::{Color, Paint, Pixmap, Rect, Transform};
+use tiny_skia::{BlendMode, Color, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
+
+use crate::editor::render_text;
 
 struct LayoutEngine {
     tree: TaffyTree<()>,
@@ -119,6 +121,19 @@ pub fn render(width: u32, height: u32) -> Pixmap {
     let editor = layout_to_rect(layout.editor);
     paint.set_color_rgba8(24, 24, 24, 255);
     pixmap.fill_rect(editor, &paint, Transform::identity(), None);
+    let textmap = render_text(editor.width() as u32, editor.height() as u32);
+    pixmap.draw_pixmap(
+        editor.x() as i32,
+        editor.y() as i32,
+        textmap.as_ref(),
+        &PixmapPaint {
+            opacity: 1.0,
+            blend_mode: BlendMode::SourceOver,
+            quality: FilterQuality::Nearest,
+        },
+        Transform::identity(),
+        None,
+    );
 
     let status_bar = layout_to_rect(layout.status_bar);
     paint.set_color_rgba8(64, 64, 64, 255);
