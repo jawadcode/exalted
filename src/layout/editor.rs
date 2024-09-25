@@ -7,13 +7,15 @@ pub fn render_text(editor_width: u32, editor_height: u32) -> Pixmap {
     let text_scale = Scale::uniform(64.0);
     let text_colour = Color::WHITE;
 
-    let font = Font::try_from_bytes(include_bytes!("../IosevkaTerm-Regular.ttf")).unwrap();
+    let font = Font::try_from_bytes(include_bytes!("../../IosevkaTerm-Regular.ttf")).unwrap();
     let v_metrics = font.v_metrics(text_scale);
 
     let mut paint = Paint::default();
     paint.set_color_rgba8(220, 220, 220, 255);
-    let mut stroke = Stroke::default();
-    stroke.width = 1.0;
+    let stroke = Stroke {
+        width: 1.0,
+        ..Stroke::default()
+    };
 
     let glyphs_height = (v_metrics.ascent - v_metrics.descent).ceil() as u32;
     let glyphs = font
@@ -39,7 +41,7 @@ pub fn render_text(editor_width: u32, editor_height: u32) -> Pixmap {
     )
     .unwrap();
     pixmap.stroke_path(
-        &PathBuilder::from_rect(glyphs_box).into(),
+        &PathBuilder::from_rect(glyphs_box),
         &paint,
         &stroke,
         Transform::identity(),
@@ -56,7 +58,7 @@ pub fn render_text(editor_width: u32, editor_height: u32) -> Pixmap {
             )
             .unwrap();
             pixmap.stroke_path(
-                &PathBuilder::from_rect(bbox).into(),
+                &PathBuilder::from_rect(bbox),
                 &paint,
                 &stroke,
                 Transform::identity(),
