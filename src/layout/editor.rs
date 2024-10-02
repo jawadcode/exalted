@@ -1,5 +1,23 @@
+use crop::Rope;
 use rusttype::{Font, Point, Scale};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PremultipliedColorU8, Rect, Stroke, Transform};
+
+use super::Interactive;
+
+#[derive(Default)]
+pub struct Editor {
+    buffer: Rope,
+    cursor_x: usize,
+    cursor_y: usize,
+}
+
+impl Interactive for Editor {
+    fn handle_mouse_event(&mut self, event: winit::event::MouseButton, pos_x: f64, pos_y: f64) {
+        dbg!(pos_x, pos_y);
+    }
+
+    fn handle_keyboard_event(&mut self, event: winit::event::KeyEvent) {}
+}
 
 pub fn render_text(editor_width: u32, editor_height: u32) -> Pixmap {
     let mut pixmap = Pixmap::new(editor_width, editor_height).unwrap();

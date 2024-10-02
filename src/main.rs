@@ -6,42 +6,69 @@ mod winit_app;
 use image::ImageFormat;
 use softbuffer::{Context, Surface};
 use std::num::NonZeroU32;
+use std::rc::Rc;
 use winit::event::{DeviceEvent, Event, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::Icon;
+use winit::window::{Icon, Window};
 
 use layout::{Interactive, LayoutEngine};
 
-static ICON: &[u8] = include_bytes!("../exalted.png");
+static EXALTED_ICON_PNG: &[u8] = include_bytes!("../exalted.png");
 
-/* Refactor `LayoutEngine` so that it's passed as state to the window event loop,
-this means that we can implement the `Interactive` trait with its event handlers. */
+struct WindowState {
+    window: Rc<Window>,
+    surface: Surface<Rc<Window>, Rc<Window>>,
+    layout: LayoutEngine,
+    cursor_pos: Option<(f64, f64)>,
+}
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
-    let (icon_rgba, icon_width, icon_height) = {
-        let image = image::load_from_memory_with_format(ICON, ImageFormat::Png)
-            .unwrap()
-            .into_rgba8();
-        let (width, height) = image.dimensions();
-        let rgba = image.into_raw();
-        (rgba, width, height)
-    };
-    let icon = Icon::from_rgba(icon_rgba, icon_width, icon_height).unwrap();
-    let app = winit_app::WinitAppBuilder::with_init(move |elwt| {
-        let window = winit_app::make_window(elwt, |w| {
-            w.with_title("Exalted").with_window_icon(Some(icon.clone()))
-        });
+    let app = winit_app::WinitAppBuilder::with_init(init_state).with_event_handler(event_loop_fn);
 
-        let context = Context::new(window.clone()).unwrap();
-        let surface = Surface::new(&context, window.clone()).unwrap();
-        let layout = LayoutEngine::new();
-        let cursor_pos = None;
+    winit_app::run_app(event_loop, app);
+}
 
-        (window, surface, layout, cursor_pos)
-    })
-    .with_event_handler(|(window, surface, layout, cursor_pos), event, elwt| {
+fn init_state(elwt: &ActiveEventLoop) -> WindowState {
+    let icon = load_png_icon(EXALTED_ICON_PNG);
+    let window = winit_app::make_window(elwt, |w| {
+        w.with_title("Exalted").with_window_icon(Some(icon.clone()))
+    });
+
+    let context = Context::new(window.clone()).unwrap();
+    let surface = Surface::new(&context, window.clone()).unwrap();
+    let layout = LayoutEngine::new();
+    let cursor_pos = None;
+
+    WindowState {
+        window,
+        surface,
+        layout,
+        cursor_pos,
+    }
+}
+
+fn load_png_icon(buf: &[u8]) -> Icon {
+    let image = image::load_from_memory_with_format(buf, ImageFormat::Png)
+        .unwrap()
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    let bytes_rgba = image.into_raw();
+    Icon::from_rgba(bytes_rgba, width, height).unwrap()
+}
+
+fn event_loop_fn(
+    WindowState {
+        window,
+        surface,
+        layout,
+        cursor_pos,
+    }: &mut WindowState,
+    event: Event<()>,
+    elwt: &ActiveEventLoop,
+) {
+    {
         elwt.set_control_flow(ControlFlow::Wait);
 
         match event {
@@ -97,7 +124,5 @@ fn main() {
             }
             _ => (),
         }
-    });
-
-    winit_app::run_app(event_loop, app);
+    }
 }

@@ -1,8 +1,12 @@
-mod editor;
-
 use std::cell::RefCell;
 
-use editor::render_text;
+mod editor;
+mod nav_bar;
+mod status_bar;
+
+use editor::{render_text, Editor};
+use nav_bar::NavBar;
+use status_bar::StatusBar;
 use taffy::{NodeId, TaffyTree};
 use tiny_skia::{BlendMode, Color, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
 use winit::event::{KeyEvent, MouseButton};
@@ -13,7 +17,7 @@ pub trait Interactive {
 }
 
 pub struct LayoutEngine {
-    tree: TaffyTree<()>,
+    tree: TaffyTree<Box<dyn Interactive>>,
     nav_bar: NodeId,
     editor: NodeId,
     status_bar: NodeId,
@@ -24,27 +28,36 @@ impl LayoutEngine {
     pub fn new() -> Self {
         use taffy::prelude::*;
 
-        let mut taffy: TaffyTree<()> = TaffyTree::new();
+        let mut taffy: TaffyTree<_> = TaffyTree::new();
         let nav_bar = taffy
-            .new_leaf(Style {
-                grid_row: line(1),
-                grid_column: line(1),
-                ..Default::default()
-            })
+            .new_leaf_with_context(
+                Style {
+                    grid_row: line(1),
+                    grid_column: line(1),
+                    ..Default::default()
+                },
+                Box::new(NavBar) as Box<dyn Interactive>,
+            )
             .unwrap();
         let editor = taffy
-            .new_leaf(Style {
-                grid_row: line(1),
-                grid_column: line(2),
-                ..Default::default()
-            })
+            .new_leaf_with_context(
+                Style {
+                    grid_row: line(1),
+                    grid_column: line(2),
+                    ..Default::default()
+                },
+                Box::new(Editor::default()) as Box<dyn Interactive>,
+            )
             .unwrap();
         let status_bar = taffy
-            .new_leaf(Style {
-                grid_row: line(2),
-                grid_column: span(2),
-                ..Default::default()
-            })
+            .new_leaf_with_context(
+                Style {
+                    grid_row: line(2),
+                    grid_column: span(2),
+                    ..Default::default()
+                },
+                Box::new(StatusBar) as Box<dyn Interactive>,
+            )
             .unwrap();
 
         let root = taffy
@@ -81,6 +94,17 @@ impl LayoutEngine {
             layout.size.height,
         )
         .unwrap()
+    }
+
+    fn is_in_rect(&self, node: NodeId, pos_x: f64, pos_y: f64) -> bool {
+        let node_rect = self.get_rect(node);
+        let pos_x = pos_x as f32;
+        let pos_y = pos_y as f32;
+
+        pos_x > node_rect.x()
+            && pos_x < node_rect.x() + node_rect.width()
+            && pos_y > node_rect.y()
+            && pos_y < node_rect.y() + node_rect.height()
     }
 
     pub fn render(&mut self, width: u32, height: u32) -> Pixmap {
@@ -132,7 +156,25 @@ impl LayoutEngine {
 }
 
 impl Interactive for LayoutEngine {
-    fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) {}
+    fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) {
+        if self.is_in_rect(self.editor, pos_x, pos_y) {
+            self.tree
+                .get_node_context_mut(self.editor)
+                .unwrap()
+                .handle_mouse_event(event, pos_x, pos_y);
+        } else if self.is_in_rect(self.nav_bar, pos_x, pos_y) {
+            self.tree
+                .get_node_context_mut(self.nav_bar)
+                .unwrap()
+                .handle_mouse_event(event, pos_x, pos_y);
+        } else if self.is_in_rect(self.status_bar, pos_x, pos_y) {
+            // This last check is probably unnecessary but
+            self.tree
+                .get_node_context_mut(self.status_bar)
+                .unwrap()
+                .handle_mouse_event(event, pos_x, pos_y);
+        }
+    }
 
     fn handle_keyboard_event(&mut self, event: KeyEvent) {}
 }
