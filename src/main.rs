@@ -7,7 +7,7 @@ use image::ImageFormat;
 use softbuffer::{Context, Surface};
 use std::num::NonZeroU32;
 use std::rc::Rc;
-use winit::event::{DeviceEvent, Event, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Icon, Window};
@@ -26,7 +26,6 @@ struct WindowState {
 fn main() {
     let event_loop = EventLoop::new().unwrap();
     let app = winit_app::WinitAppBuilder::with_init(init_state).with_event_handler(event_loop_fn);
-
     winit_app::run_app(event_loop, app);
 }
 
@@ -80,6 +79,7 @@ fn event_loop_fn(
                     } {
                         surface.resize(width, height).unwrap();
 
+                        layout.compute_layout(width.get() as f32, height.get() as f32);
                         let pixmap = layout.render(width.get(), height.get());
                         let mut buffer = surface.buffer_mut().unwrap();
                         for index in 0..(width.get() * height.get()) as usize {
@@ -93,11 +93,22 @@ fn event_loop_fn(
                 }
                 WindowEvent::CloseRequested => elwt.exit(),
                 WindowEvent::KeyboardInput { event, .. } => {
-                    if let Key::Named(key) = &event.logical_key {
-                        match key {
-                            NamedKey::Escape => elwt.exit(),
-                            _ => layout.handle_keyboard_event(event),
+                    if match &event {
+                        KeyEvent {
+                            logical_key: Key::Named(NamedKey::Escape),
+                            ..
+                        } => {
+                            elwt.exit();
+                            false
                         }
+                        KeyEvent {
+                            state: ElementState::Pressed,
+                            repeat: false,
+                            ..
+                        } => layout.handle_keyboard_event(event),
+                        _ => false,
+                    } {
+                        window.request_redraw()
                     }
                 }
                 WindowEvent::CursorMoved { position, .. } => {
@@ -105,7 +116,9 @@ fn event_loop_fn(
                 }
                 WindowEvent::MouseInput { state, button, .. } if state.is_pressed() => {
                     if let Some((pos_x, pos_y)) = *cursor_pos {
-                        layout.handle_mouse_event(button, pos_x, pos_y);
+                        if layout.handle_mouse_event(button, pos_x, pos_y) {
+                            window.request_redraw();
+                        }
                     }
                 }
                 _ => (),

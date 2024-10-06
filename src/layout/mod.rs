@@ -4,7 +4,7 @@ mod editor;
 mod nav_bar;
 mod status_bar;
 
-use editor::{render_text, Editor};
+use editor::Editor;
 use nav_bar::NavBar;
 use status_bar::StatusBar;
 use taffy::{NodeId, TaffyTree};
@@ -12,16 +12,24 @@ use tiny_skia::{BlendMode, Color, FilterQuality, Paint, Pixmap, PixmapPaint, Rec
 use winit::event::{KeyEvent, MouseButton};
 
 pub trait Interactive {
-    fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64);
-    fn handle_keyboard_event(&mut self, event: KeyEvent);
+    fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) -> bool;
+    fn handle_keyboard_event(&mut self, event: KeyEvent) -> bool;
+    fn render(&self, width: u32, height: u32) -> Pixmap;
 }
 
 pub struct LayoutEngine {
     tree: TaffyTree<Box<dyn Interactive>>,
+    root: NodeId,
     nav_bar: NodeId,
     editor: NodeId,
     status_bar: NodeId,
-    root: NodeId,
+    focused: Section,
+}
+
+enum Section {
+    NavBar,
+    Editor,
+    StatusBar,
 }
 
 impl LayoutEngine {
@@ -82,6 +90,7 @@ impl LayoutEngine {
             editor,
             status_bar,
             root,
+            focused: Section::Editor,
         }
     }
 
@@ -107,35 +116,76 @@ impl LayoutEngine {
             && pos_y < node_rect.y() + node_rect.height()
     }
 
-    pub fn render(&mut self, width: u32, height: u32) -> Pixmap {
+    pub fn compute_layout(&mut self, width: f32, height: f32) {
         use taffy::{geometry::Size, prelude::length};
 
         self.tree
             .compute_layout(
                 self.root,
                 Size {
-                    width: length(width as f32 / 100.0),
-                    height: length(height as f32 / 100.0),
+                    width: length(width / 100.0),
+                    height: length(height / 100.0),
                 },
             )
             .unwrap();
+    }
+}
 
-        let nav_bar = self.get_rect(self.nav_bar);
-        let editor = self.get_rect(self.editor);
-        let status_bar = self.get_rect(self.status_bar);
+// The boolean return value of the handler methods indicates whether a particular
+// element should be re-rendered, we should implement a way to re-render only the
+// appropriate stuff, caching the content that has not changed.
+// However, don't forget to start simple, so we can ignore the caching if it's
+// non-trivial.
 
+impl Interactive for LayoutEngine {
+    fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) -> bool {
+        if self.is_in_rect(self.editor, pos_x, pos_y) {
+            self.focused = Section::Editor;
+            self.tree.get_node_context_mut(self.editor)
+        } else if self.is_in_rect(self.nav_bar, pos_x, pos_y) {
+            self.focused = Section::NavBar;
+            self.tree.get_node_context_mut(self.nav_bar)
+        } else if self.is_in_rect(self.status_bar, pos_x, pos_y) {
+            self.focused = Section::StatusBar;
+            self.tree.get_node_context_mut(self.status_bar)
+        } else {
+            // I want to see if this is ever triggered
+            unreachable!("oopsie")
+        }
+        .unwrap()
+        .handle_mouse_event(event, pos_x, pos_y)
+    }
+
+    fn handle_keyboard_event(&mut self, event: KeyEvent) -> bool {
+        self.tree
+            .get_node_context_mut(match self.focused {
+                Section::NavBar => self.nav_bar,
+                Section::Editor => self.editor,
+                Section::StatusBar => self.status_bar,
+            })
+            .unwrap()
+            .handle_keyboard_event(event)
+    }
+
+    fn render(&self, width: u32, height: u32) -> Pixmap {
         let mut pixmap = Pixmap::new(width, height).unwrap();
         let mut paint = Paint::default();
 
         pixmap.fill(Color::BLACK);
 
         paint.set_color_rgba8(48, 48, 48, 255);
+        let nav_bar = self.get_rect(self.nav_bar);
         pixmap.fill_rect(nav_bar, &paint, Transform::identity(), None);
 
         paint.set_color_rgba8(24, 24, 24, 255);
+        let editor = self.get_rect(self.editor);
         pixmap.fill_rect(editor, &paint, Transform::identity(), None);
 
-        let editor_pixmap = render_text(editor.width() as u32, editor.height() as u32);
+        let editor_pixmap = self
+            .tree
+            .get_node_context(self.editor)
+            .unwrap()
+            .render(editor.width() as u32, editor.height() as u32);
         pixmap.draw_pixmap(
             editor.x() as i32,
             editor.y() as i32,
@@ -150,33 +200,10 @@ impl LayoutEngine {
         );
 
         paint.set_color_rgba8(64, 64, 64, 255);
+        let status_bar = self.get_rect(self.status_bar);
         pixmap.fill_rect(status_bar, &paint, Transform::identity(), None);
         pixmap
     }
-}
-
-impl Interactive for LayoutEngine {
-    fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) {
-        if self.is_in_rect(self.editor, pos_x, pos_y) {
-            self.tree
-                .get_node_context_mut(self.editor)
-                .unwrap()
-                .handle_mouse_event(event, pos_x, pos_y);
-        } else if self.is_in_rect(self.nav_bar, pos_x, pos_y) {
-            self.tree
-                .get_node_context_mut(self.nav_bar)
-                .unwrap()
-                .handle_mouse_event(event, pos_x, pos_y);
-        } else if self.is_in_rect(self.status_bar, pos_x, pos_y) {
-            // This last check is probably unnecessary but
-            self.tree
-                .get_node_context_mut(self.status_bar)
-                .unwrap()
-                .handle_mouse_event(event, pos_x, pos_y);
-        }
-    }
-
-    fn handle_keyboard_event(&mut self, event: KeyEvent) {}
 }
 
 thread_local! {
