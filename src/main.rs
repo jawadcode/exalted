@@ -7,6 +7,8 @@ use image::ImageFormat;
 use softbuffer::{Context, Surface};
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::slice;
+use tiny_skia::{Paint, PixmapMut, Rect};
 use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
@@ -79,16 +81,25 @@ fn event_loop_fn(
                     } {
                         surface.resize(width, height).unwrap();
 
-                        layout.compute_layout(width.get() as f32, height.get() as f32);
-                        let pixmap = layout.render(width.get(), height.get());
-                        let mut buffer = surface.buffer_mut().unwrap();
-                        for index in 0..(width.get() * height.get()) as usize {
-                            buffer[index] = pixmap.data()[index * 4 + 2] as u32
-                                | (pixmap.data()[index * 4 + 1] as u32) << 8
-                                | (pixmap.data()[index * 4] as u32) << 16;
-                        }
+                        let mut surface_buffer = surface.buffer_mut().unwrap();
+                        let surface_buffer_slice = unsafe {
+                            slice::from_raw_parts_mut(
+                                surface_buffer.as_mut_ptr() as *mut u8,
+                                surface_buffer.len() * 4,
+                            )
+                        };
+                        let mut pixmap =
+                            PixmapMut::from_bytes(surface_buffer_slice, width.get(), height.get())
+                                .unwrap();
+                        let mut paint = Paint::default();
+                        layout.render(
+                            &mut pixmap,
+                            &mut paint,
+                            Rect::from_xywh(0.0, 0.0, width.get() as f32, height.get() as f32)
+                                .unwrap(),
+                        );
 
-                        buffer.present().unwrap();
+                        surface_buffer.present().unwrap();
                     }
                 }
                 WindowEvent::CloseRequested => elwt.exit(),

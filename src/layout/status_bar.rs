@@ -1,4 +1,4 @@
-use tiny_skia::{Color, Pixmap};
+use tiny_skia::{Paint, PixmapMut, Rect, Transform};
 
 use super::Interactive;
 
@@ -18,9 +18,8 @@ impl Interactive for StatusBar {
         false
     }
 
-    fn render(&self, width: u32, height: u32) -> Pixmap {
-        let mut pixmap = Pixmap::new(width, height).unwrap();
-        pixmap.fill(Color::TRANSPARENT);
-        pixmap
+    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, rect: Rect) {
+        paint.set_color_rgba8(64, 64, 64, 255);
+        pixmap.fill_rect(rect, paint, Transform::identity(), None);
     }
 }

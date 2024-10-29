@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 mod editor;
 mod nav_bar;
 mod status_bar;
@@ -8,13 +6,13 @@ use editor::Editor;
 use nav_bar::NavBar;
 use status_bar::StatusBar;
 use taffy::{NodeId, TaffyTree};
-use tiny_skia::{BlendMode, Color, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
+use tiny_skia::{Paint, PixmapMut, Rect, Transform};
 use winit::event::{KeyEvent, MouseButton};
 
 pub trait Interactive {
     fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) -> bool;
     fn handle_keyboard_event(&mut self, event: KeyEvent) -> bool;
-    fn render(&self, width: u32, height: u32) -> Pixmap;
+    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, rect: Rect);
 }
 
 pub struct LayoutEngine {
@@ -167,45 +165,25 @@ impl Interactive for LayoutEngine {
             .handle_keyboard_event(event)
     }
 
-    fn render(&self, width: u32, height: u32) -> Pixmap {
-        let mut pixmap = Pixmap::new(width, height).unwrap();
-        let mut paint = Paint::default();
+    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, rect: Rect) {
+        self.compute_layout(rect.width(), rect.height());
 
-        pixmap.fill(Color::BLACK);
-
-        paint.set_color_rgba8(48, 48, 48, 255);
-        let nav_bar = self.get_rect(self.nav_bar);
-        pixmap.fill_rect(nav_bar, &paint, Transform::identity(), None);
-
-        paint.set_color_rgba8(24, 24, 24, 255);
-        let editor = self.get_rect(self.editor);
-        pixmap.fill_rect(editor, &paint, Transform::identity(), None);
-
-        let editor_pixmap = self
-            .tree
-            .get_node_context(self.editor)
+        let nav_bar_rect = self.get_rect(self.nav_bar);
+        self.tree
+            .get_node_context_mut(self.nav_bar)
             .unwrap()
-            .render(editor.width() as u32, editor.height() as u32);
-        pixmap.draw_pixmap(
-            editor.x() as i32,
-            editor.y() as i32,
-            editor_pixmap.as_ref(),
-            &PixmapPaint {
-                opacity: 1.0,
-                blend_mode: BlendMode::SourceOver,
-                quality: FilterQuality::Nearest,
-            },
-            Transform::identity(),
-            None,
-        );
+            .render(pixmap, paint, nav_bar_rect);
 
-        paint.set_color_rgba8(64, 64, 64, 255);
-        let status_bar = self.get_rect(self.status_bar);
-        pixmap.fill_rect(status_bar, &paint, Transform::identity(), None);
-        pixmap
+        let editor_rect = self.get_rect(self.editor);
+        self.tree
+            .get_node_context_mut(self.editor)
+            .unwrap()
+            .render(pixmap, paint, editor_rect);
+
+        let status_bar_rect = self.get_rect(self.status_bar);
+        self.tree
+            .get_node_context_mut(self.status_bar)
+            .unwrap()
+            .render(pixmap, paint, status_bar_rect);
     }
-}
-
-thread_local! {
-    static LAYOUT_ENGINE: RefCell<LayoutEngine> = RefCell::new(LayoutEngine::new());
 }
