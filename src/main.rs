@@ -39,7 +39,7 @@ fn init_state(elwt: &ActiveEventLoop) -> WindowState {
 
     let context = Context::new(window.clone()).unwrap();
     let surface = Surface::new(&context, window.clone()).unwrap();
-    let layout = LayoutEngine::new();
+    let layout = LayoutEngine::new(window.scale_factor());
     let cursor_pos = None;
 
     WindowState {
@@ -95,6 +95,7 @@ fn event_loop_fn(
                         layout.render(
                             &mut pixmap,
                             &mut paint,
+                            window.scale_factor(),
                             Rect::from_xywh(0.0, 0.0, width.get() as f32, height.get() as f32)
                                 .unwrap(),
                         );

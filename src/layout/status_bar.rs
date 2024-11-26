@@ -7,18 +7,24 @@ pub struct StatusBar;
 impl Interactive for StatusBar {
     fn handle_mouse_event(
         &mut self,
-        event: winit::event::MouseButton,
-        pos_x: f64,
-        pos_y: f64,
+        _event: winit::event::MouseButton,
+        _pos_x: f64,
+        _pos_y: f64,
     ) -> bool {
         false
     }
 
-    fn handle_keyboard_event(&mut self, event: winit::event::KeyEvent) -> bool {
+    fn handle_keyboard_event(&mut self, _event: winit::event::KeyEvent) -> bool {
         false
     }
 
-    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, rect: Rect) {
+    fn render(
+        &mut self,
+        pixmap: &mut PixmapMut,
+        paint: &mut Paint,
+        _scale_factor: f64,
+        rect: Rect,
+    ) {
         paint.set_color_rgba8(64, 64, 64, 255);
         pixmap.fill_rect(rect, paint, Transform::identity(), None);
     }

@@ -6,13 +6,13 @@ use editor::Editor;
 use nav_bar::NavBar;
 use status_bar::StatusBar;
 use taffy::{NodeId, TaffyTree};
-use tiny_skia::{Paint, PixmapMut, Rect, Transform};
+use tiny_skia::{Paint, PixmapMut, Rect};
 use winit::event::{KeyEvent, MouseButton};
 
 pub trait Interactive {
     fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) -> bool;
     fn handle_keyboard_event(&mut self, event: KeyEvent) -> bool;
-    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, rect: Rect);
+    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect);
 }
 
 pub struct LayoutEngine {
@@ -31,7 +31,7 @@ enum Section {
 }
 
 impl LayoutEngine {
-    pub fn new() -> Self {
+    pub fn new(scale_factor: f64) -> Self {
         use taffy::prelude::*;
 
         let mut taffy: TaffyTree<_> = TaffyTree::new();
@@ -52,7 +52,7 @@ impl LayoutEngine {
                     grid_column: line(2),
                     ..Default::default()
                 },
-                Box::new(Editor::default()) as Box<dyn Interactive>,
+                Box::new(Editor::new(scale_factor)) as Box<dyn Interactive>,
             )
             .unwrap();
         let status_bar = taffy
@@ -129,12 +129,6 @@ impl LayoutEngine {
     }
 }
 
-// The boolean return value of the handler methods indicates whether a particular
-// element should be re-rendered, we should implement a way to re-render only the
-// appropriate stuff, caching the content that has not changed.
-// However, don't forget to start simple, so we can ignore the caching if it's
-// non-trivial.
-
 impl Interactive for LayoutEngine {
     fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) -> bool {
         if self.is_in_rect(self.editor, pos_x, pos_y) {
@@ -165,25 +159,27 @@ impl Interactive for LayoutEngine {
             .handle_keyboard_event(event)
     }
 
-    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, rect: Rect) {
+    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect) {
         self.compute_layout(rect.width(), rect.height());
 
         let nav_bar_rect = self.get_rect(self.nav_bar);
         self.tree
             .get_node_context_mut(self.nav_bar)
             .unwrap()
-            .render(pixmap, paint, nav_bar_rect);
+            .render(pixmap, paint, scale_factor, nav_bar_rect);
 
         let editor_rect = self.get_rect(self.editor);
-        self.tree
-            .get_node_context_mut(self.editor)
-            .unwrap()
-            .render(pixmap, paint, editor_rect);
+        self.tree.get_node_context_mut(self.editor).unwrap().render(
+            pixmap,
+            paint,
+            scale_factor,
+            editor_rect,
+        );
 
         let status_bar_rect = self.get_rect(self.status_bar);
         self.tree
             .get_node_context_mut(self.status_bar)
             .unwrap()
-            .render(pixmap, paint, status_bar_rect);
+            .render(pixmap, paint, scale_factor, status_bar_rect);
     }
 }

@@ -1,33 +1,44 @@
-use rusttype::{Font, Point, Scale};
-use tiny_skia::{
-    Color, Paint, PathBuilder, PixmapMut, PremultipliedColorU8, Rect, Stroke, Transform,
+use cosmic_text::{
+    Attrs, AttrsList, Buffer, Color as CTColor, Edit, Editor as CTEditor, FontSystem, Metrics,
+    SwashCache,
 };
+use tiny_skia::{Color, Paint, PixmapMut, PremultipliedColorU8, Rect, Transform};
 use winit::keyboard::Key;
 
 use super::Interactive;
 
-pub struct Editor {
-    buffer: String,
-    cursor_x: usize,
-    cursor_y: usize,
+pub struct Editor<'buffer> {
+    font_system: FontSystem,
+    swash_cache: SwashCache,
+    metrics: Metrics,
+    editor: CTEditor<'buffer>,
+    attrs: Attrs<'buffer>,
 }
 
-impl Default for Editor {
-    fn default() -> Self {
+impl Editor<'_> {
+    pub fn new(scale_factor: f64) -> Self {
+        let metrics = Metrics::new(32.0, 48.0);
+        let metrics_scaled = metrics.clone().scale(scale_factor as f32);
+        let mut font_system = FontSystem::new();
+        let buffer = Buffer::new(&mut font_system, metrics_scaled);
+        let editor = CTEditor::new(buffer);
+
         Self {
-            buffer: "Beans on Toast".to_string(),
-            cursor_x: 0,
-            cursor_y: 0,
+            font_system,
+            swash_cache: SwashCache::new(),
+            metrics,
+            editor,
+            attrs: Attrs::new().family(cosmic_text::Family::Monospace),
         }
     }
 }
 
-impl Interactive for Editor {
+impl Interactive for Editor<'_> {
     fn handle_mouse_event(
         &mut self,
-        event: winit::event::MouseButton,
-        pos_x: f64,
-        pos_y: f64,
+        _event: winit::event::MouseButton,
+        _pos_x: f64,
+        _pos_y: f64,
     ) -> bool {
         false
     }
@@ -35,12 +46,14 @@ impl Interactive for Editor {
     fn handle_keyboard_event(&mut self, event: winit::event::KeyEvent) -> bool {
         match event.logical_key {
             Key::Character(key) => {
-                self.buffer.push_str(key.as_str());
+                self.editor
+                    .insert_string(key.as_str(), Some(AttrsList::new(self.attrs)));
                 true
             }
             Key::Named(key) => match key.to_text() {
                 Some(key) => {
-                    self.buffer.push_str(key);
+                    self.editor
+                        .insert_string(key, Some(AttrsList::new(self.attrs)));
                     true
                 }
                 None => false,
@@ -49,82 +62,73 @@ impl Interactive for Editor {
         }
     }
 
-    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, rect: Rect) {
+    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect) {
+        let transformation = Transform::from_translate(rect.x(), rect.y());
         paint.set_color_rgba8(24, 24, 24, 255);
         pixmap.fill_rect(rect, paint, Transform::identity(), None);
 
-        let text_scale = Scale::uniform(64.0);
-        let text_colour = Color::WHITE;
-
-        let font = Font::try_from_bytes(include_bytes!("../../IosevkaTerm-Regular.ttf")).unwrap();
-        let v_metrics = font.v_metrics(text_scale);
-
-        paint.set_color_rgba8(220, 220, 220, 255);
-        let stroke = Stroke {
-            width: 1.0,
-            ..Stroke::default()
-        };
-
-        let glyphs_height = (v_metrics.ascent - v_metrics.descent).ceil() as u32;
-        let glyphs = font
-            .layout(
-                &self.buffer,
-                text_scale,
-                Point {
-                    x: 5.0,
-                    y: 5.0 + v_metrics.ascent,
-                },
-            )
-            .collect::<Vec<_>>();
-        let glyphs_width = {
-            let min_x = glyphs.first().unwrap().pixel_bounding_box().unwrap().min.x;
-            let max_x = glyphs.last().unwrap().pixel_bounding_box().unwrap().max.x;
-            (max_x - min_x) as u32
-        };
-        let glyphs_box = Rect::from_xywh(
-            4.0 + rect.x(),
-            4.0 + rect.y(),
-            glyphs_width as f32 + 6.0,
-            glyphs_height as f32 + 6.0,
-        )
-        .unwrap();
-        pixmap.stroke_path(
-            &PathBuilder::from_rect(glyphs_box),
-            paint,
-            &stroke,
-            Transform::identity(),
-            None,
-        );
-
-        for glyph in &glyphs {
-            if let Some(bounding_box) = glyph.pixel_bounding_box() {
-                let bbox = Rect::from_ltrb(
-                    bounding_box.min.x as f32 - 1.0 + rect.x(),
-                    bounding_box.min.y as f32 - 1.0 + rect.y(),
-                    bounding_box.max.x as f32 + 1.0 + rect.x(),
-                    bounding_box.max.y as f32 + 1.0 + rect.y(),
-                )
-                .unwrap();
-                pixmap.stroke_path(
-                    &PathBuilder::from_rect(bbox),
-                    paint,
-                    &stroke,
-                    Transform::identity(),
-                    None,
-                );
-            }
+        let mut editor = self.editor.borrow_with(&mut self.font_system);
+        let metrics = self.metrics.clone().scale(scale_factor as f32);
+        if metrics != editor.with_buffer(|buf| buf.metrics()) {
+            editor.with_buffer_mut(|buf| buf.set_metrics(metrics));
         }
 
-        let pixmap_width = pixmap.width();
-        let pixmap_data = pixmap.pixels_mut();
-        for glyph in glyphs {
-            if let Some(bounding_box) = glyph.pixel_bounding_box() {
-                glyph.draw(|x, y, v| {
-                    let x = x + bounding_box.min.x as u32 + rect.x() as u32;
-                    let y = y + bounding_box.min.y as u32 + rect.y() as u32;
-                    pixmap_data[((y - 1) * pixmap_width + x) as usize] =
-                        pixel_colour(text_colour, v);
-                });
+        editor.with_buffer_mut(|buf| buf.set_size(Some(rect.width()), Some(rect.height())));
+        paint.anti_alias = false;
+        editor.shape_as_needed(true);
+        editor.draw(
+            &mut self.swash_cache,
+            CTColor::rgba(200, 200, 200, 255),
+            CTColor::rgba(255, 255, 255, 255),
+            CTColor::rgba(128, 63, 16, 100),
+            CTColor::rgba(0, 128, 196, 255),
+            |x, y, w, h, colour| {
+                paint.set_color_rgba8(colour.b(), colour.g(), colour.r(), colour.a());
+                pixmap.fill_rect(
+                    Rect::from_xywh(x as f32, y as f32, w as f32, h as f32).unwrap(),
+                    &paint,
+                    transformation,
+                    None,
+                );
+            },
+        );
+
+        // TODO: Accessibility
+        // if let Some((x, y)) = editor.cursor_position() {
+        //     window.set_ime_cursor_area(PhysicalPosition::new(x, y), PhysicalSize::new(20, 20));
+        // }
+
+        {
+            let mut start_line_opt = None;
+            let mut end_line = 0;
+            editor.with_buffer(|buffer| {
+                for run in buffer.layout_runs() {
+                    end_line = run.line_i;
+                    if start_line_opt.is_none() {
+                        start_line_opt = Some(end_line);
+                    }
+                }
+            });
+
+            let start_line = start_line_opt.unwrap_or(end_line);
+            let lines = editor.with_buffer(|buffer| buffer.lines.len());
+            let start_y = (start_line * rect.height() as usize) / lines;
+            let end_y = (end_line * rect.height() as usize) / lines;
+            let scrollbar_width = 12.0;
+            paint.set_color_rgba8(0xFF, 0xFF, 0xFF, 0x40);
+            if end_y > start_y {
+                pixmap.fill_rect(
+                    Rect::from_xywh(
+                        rect.width() - scrollbar_width * scale_factor as f32,
+                        start_y as f32,
+                        scrollbar_width * scale_factor as f32,
+                        (end_y - start_y) as f32,
+                    )
+                    .unwrap(),
+                    &paint,
+                    transformation,
+                    None,
+                );
             }
         }
     }

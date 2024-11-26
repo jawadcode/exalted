@@ -9,9 +9,9 @@ strip = "symbols"
 lto = "fat"
 
 [dependencies]
+cosmic-text = "0.12"
 crop = "0.4"
 image = "0.25"
-rusttype = "0.9"
 softbuffer = "0.4"
 taffy = { version = "0.5", features = [ "grid", "flexbox" ] }
 tiny-skia = "0.11"
