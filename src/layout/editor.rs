@@ -2,8 +2,13 @@ use cosmic_text::{
     Attrs, AttrsList, Buffer, Color as CTColor, Edit, Editor as CTEditor, FontSystem, Metrics,
     SwashCache,
 };
-use tiny_skia::{Color, Paint, PixmapMut, PremultipliedColorU8, Rect, Transform};
-use winit::keyboard::Key;
+use tiny_skia::{Paint, PixmapMut, Rect, Transform};
+use winit::{
+    event::ElementState,
+    keyboard::{Key, SmolStr},
+};
+
+use crate::InputState;
 
 use super::Interactive;
 
@@ -34,17 +39,12 @@ impl Editor<'_> {
 }
 
 impl Interactive for Editor<'_> {
-    fn handle_mouse_event(
-        &mut self,
-        _event: winit::event::MouseButton,
-        _pos_x: f64,
-        _pos_y: f64,
-    ) -> bool {
+    fn handle_mouse_event(&mut self, _input_state: &InputState, _new_state: ElementState) -> bool {
         false
     }
 
-    fn handle_keyboard_event(&mut self, event: winit::event::KeyEvent) -> bool {
-        match event.logical_key {
+    fn handle_keyboard_event(&mut self, _input_state: &InputState, key: Key<SmolStr>) -> bool {
+        match key {
             Key::Character(key) => {
                 self.editor
                     .insert_string(key.as_str(), Some(AttrsList::new(self.attrs)));
@@ -132,10 +132,4 @@ impl Interactive for Editor<'_> {
             }
         }
     }
-}
-
-#[inline(always)]
-fn pixel_colour(mut text_colour: Color, alpha: f32) -> PremultipliedColorU8 {
-    text_colour.set_alpha(alpha);
-    text_colour.premultiply().to_color_u8()
 }

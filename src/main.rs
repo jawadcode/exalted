@@ -9,9 +9,9 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::slice;
 use tiny_skia::{Paint, PixmapMut, Rect};
-use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState};
 use winit::window::{Icon, Window};
 
 use layout::{Interactive, LayoutEngine};
@@ -22,7 +22,27 @@ struct WindowState {
     window: Rc<Window>,
     surface: Surface<Rc<Window>, Rc<Window>>,
     layout: LayoutEngine,
-    cursor_pos: Option<(f64, f64)>,
+    input: InputState,
+}
+
+struct InputState {
+    mouse_left_state: ElementState,
+    mouse_pos_x: f64,
+    mouse_pos_y: f64,
+    unapplied_scroll_data: f64,
+    modifier_state: ModifiersState,
+}
+
+impl Default for InputState {
+    fn default() -> Self {
+        Self {
+            mouse_left_state: ElementState::Released,
+            mouse_pos_x: 0.0,
+            mouse_pos_y: 0.0,
+            unapplied_scroll_data: 0.0,
+            modifier_state: ModifiersState::empty(),
+        }
+    }
 }
 
 fn main() {
@@ -40,13 +60,13 @@ fn init_state(elwt: &ActiveEventLoop) -> WindowState {
     let context = Context::new(window.clone()).unwrap();
     let surface = Surface::new(&context, window.clone()).unwrap();
     let layout = LayoutEngine::new(window.scale_factor());
-    let cursor_pos = None;
+    let input = InputState::default();
 
     WindowState {
         window,
         surface,
         layout,
-        cursor_pos,
+        input,
     }
 }
 
@@ -64,7 +84,7 @@ fn event_loop_fn(
         window,
         surface,
         layout,
-        cursor_pos,
+        input,
     }: &mut WindowState,
     event: Event<()>,
     elwt: &ActiveEventLoop,
@@ -103,50 +123,52 @@ fn event_loop_fn(
                         surface_buffer.present().unwrap();
                     }
                 }
-                WindowEvent::CloseRequested => elwt.exit(),
+                WindowEvent::ModifiersChanged(mods) => input.modifier_state = mods.state(),
                 WindowEvent::KeyboardInput { event, .. } => {
-                    if match &event {
+                    if match event {
                         KeyEvent {
-                            logical_key: Key::Named(NamedKey::Escape),
+                            logical_key: Key::Character(key),
                             ..
-                        } => {
+                        } if input.modifier_state.control_key() && key == "q" => {
                             elwt.exit();
                             false
                         }
                         KeyEvent {
                             state: ElementState::Pressed,
                             repeat: false,
+                            logical_key,
                             ..
-                        } => layout.handle_keyboard_event(event),
+                        } => layout.handle_keyboard_event(&input, logical_key),
                         _ => false,
                     } {
                         window.request_redraw()
                     }
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    *cursor_pos = Some((position.x, position.y))
+                    input.mouse_pos_x = position.x;
+                    input.mouse_pos_y = position.y;
                 }
                 WindowEvent::MouseInput { state, button, .. } if state.is_pressed() => {
-                    if let Some((pos_x, pos_y)) = *cursor_pos {
-                        if layout.handle_mouse_event(button, pos_x, pos_y) {
-                            window.request_redraw();
-                        }
+                    if button == MouseButton::Left && layout.handle_mouse_event(&input, state) {
+                        window.request_redraw();
                     }
+                    input.mouse_left_state = state;
                 }
+                WindowEvent::MouseWheel { delta: _, .. } => {
+                    input.unapplied_scroll_data = 0.0;
+                    todo!("Implement scrolling")
+                }
+                WindowEvent::CloseRequested => elwt.exit(),
                 _ => (),
             },
             Event::DeviceEvent {
                 event: DeviceEvent::Motion { axis, value },
                 ..
-            } => {
-                if let Some((pos_x, pos_y)) = cursor_pos.as_mut() {
-                    match axis {
-                        0 => *pos_x += value,
-                        1 => *pos_y += value,
-                        _ => unimplemented!("i cri"),
-                    }
-                }
-            }
+            } => match axis {
+                0 => input.mouse_pos_x += value,
+                1 => input.mouse_pos_y += value,
+                _ => unimplemented!("only 2 axes of motion are supported"),
+            },
             _ => (),
         }
     }

@@ -7,11 +7,16 @@ use nav_bar::NavBar;
 use status_bar::StatusBar;
 use taffy::{NodeId, TaffyTree};
 use tiny_skia::{Paint, PixmapMut, Rect};
-use winit::event::{KeyEvent, MouseButton};
+use winit::{
+    event::ElementState,
+    keyboard::{Key, SmolStr},
+};
+
+use crate::InputState;
 
 pub trait Interactive {
-    fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) -> bool;
-    fn handle_keyboard_event(&mut self, event: KeyEvent) -> bool;
+    fn handle_mouse_event(&mut self, input_state: &InputState, new_state: ElementState) -> bool;
+    fn handle_keyboard_event(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool;
     fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect);
 }
 
@@ -130,7 +135,9 @@ impl LayoutEngine {
 }
 
 impl Interactive for LayoutEngine {
-    fn handle_mouse_event(&mut self, event: MouseButton, pos_x: f64, pos_y: f64) -> bool {
+    fn handle_mouse_event(&mut self, input_state: &InputState, new_state: ElementState) -> bool {
+        let pos_x = input_state.mouse_pos_x;
+        let pos_y = input_state.mouse_pos_y;
         if self.is_in_rect(self.editor, pos_x, pos_y) {
             self.focused = Section::Editor;
             self.tree.get_node_context_mut(self.editor)
@@ -145,10 +152,10 @@ impl Interactive for LayoutEngine {
             unreachable!("oopsie")
         }
         .unwrap()
-        .handle_mouse_event(event, pos_x, pos_y)
+        .handle_mouse_event(input_state, new_state)
     }
 
-    fn handle_keyboard_event(&mut self, event: KeyEvent) -> bool {
+    fn handle_keyboard_event(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool {
         self.tree
             .get_node_context_mut(match self.focused {
                 Section::NavBar => self.nav_bar,
@@ -156,7 +163,7 @@ impl Interactive for LayoutEngine {
                 Section::StatusBar => self.status_bar,
             })
             .unwrap()
-            .handle_keyboard_event(event)
+            .handle_keyboard_event(input_state, key)
     }
 
     fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect) {

@@ -1,20 +1,21 @@
 use tiny_skia::{Paint, PixmapMut, Rect, Transform};
+use winit::{
+    event::ElementState,
+    keyboard::{Key, SmolStr},
+};
+
+use crate::InputState;
 
 use super::Interactive;
 
 pub struct StatusBar;
 
 impl Interactive for StatusBar {
-    fn handle_mouse_event(
-        &mut self,
-        _event: winit::event::MouseButton,
-        _pos_x: f64,
-        _pos_y: f64,
-    ) -> bool {
+    fn handle_mouse_event(&mut self, _input_state: &InputState, _new_state: ElementState) -> bool {
         false
     }
 
-    fn handle_keyboard_event(&mut self, _event: winit::event::KeyEvent) -> bool {
+    fn handle_keyboard_event(&mut self, _input_state: &InputState, _key: Key<SmolStr>) -> bool {
         false
     }
 
