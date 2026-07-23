@@ -138,7 +138,7 @@ fn event_loop_fn(
                             repeat: false,
                             logical_key,
                             ..
-                        } => layout.handle_keyboard_event(&input, logical_key),
+                        } => layout.handle_keyboard_event(input, logical_key),
                         _ => false,
                     } {
                         window.request_redraw()
@@ -149,12 +149,12 @@ fn event_loop_fn(
                     input.mouse_pos_y = position.y;
                 }
                 WindowEvent::MouseInput { state, button, .. } if state.is_pressed() => {
-                    if button == MouseButton::Left && layout.handle_mouse_event(&input, state) {
+                    if button == MouseButton::Left && layout.handle_mouse_event(input, state) {
                         window.request_redraw();
                     }
                     input.mouse_left_state = state;
                 }
-                WindowEvent::MouseWheel { delta: _, .. } => {
+                WindowEvent::MouseWheel { /* delta, */ .. } => {
                     input.unapplied_scroll_data = 0.0;
                     todo!("Implement scrolling")
                 }

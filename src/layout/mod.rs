@@ -76,11 +76,11 @@ impl LayoutEngine {
                 Style {
                     display: Display::Grid,
                     size: Size {
-                        width: percent(100.0),
-                        height: percent(100.0),
+                        width: percent(100.0_f32),
+                        height: percent(100.0_f32),
                     },
-                    grid_template_rows: vec![auto(), length(36.0)],
-                    grid_template_columns: vec![length(200.0), auto()],
+                    grid_template_rows: vec![auto(), length(36.0_f32)],
+                    grid_template_columns: vec![length(200.0_f32), auto()],
                     ..Default::default()
                 },
                 &[nav_bar, editor, status_bar],
