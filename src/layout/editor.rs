@@ -1,11 +1,11 @@
 use cosmic_text::{
-    Attrs, AttrsList, Buffer, Color as CTColor, Edit, Editor as CTEditor, FontSystem, Metrics,
-    SwashCache,
+    Action, Attrs, AttrsList, Buffer, Color as CTColor, Edit, Editor as CTEditor, FontSystem,
+    Metrics, Motion, Selection, SwashCache,
 };
 use tiny_skia::{Paint, PixmapMut, Rect, Transform};
 use winit::{
     event::ElementState,
-    keyboard::{Key, SmolStr},
+    keyboard::{Key, NamedKey, SmolStr},
 };
 
 use crate::InputState;
@@ -23,7 +23,7 @@ pub struct Editor<'buffer> {
 impl Editor<'_> {
     pub fn new(scale_factor: f64) -> Self {
         let metrics = Metrics::new(32.0, 48.0);
-        let metrics_scaled = metrics.clone().scale(scale_factor as f32);
+        let metrics_scaled = metrics.scale(scale_factor as f32);
         let mut font_system = FontSystem::new();
         let buffer = Buffer::new(&mut font_system, metrics_scaled);
         let editor = CTEditor::new(buffer);
@@ -43,23 +43,53 @@ impl Interactive for Editor<'_> {
         false
     }
 
-    fn handle_keyboard_event(&mut self, _input_state: &InputState, key: Key<SmolStr>) -> bool {
+    fn handle_keyboard_event(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool {
+        let attrs = Some(AttrsList::new(&self.attrs));
+        // let attrs = None;
         match key {
-            Key::Character(key) => {
-                self.editor
-                    .insert_string(key.as_str(), Some(AttrsList::new(self.attrs)));
-                true
+            Key::Character(key) => self.editor.insert_string(key.as_str(), attrs),
+            Key::Named(key) => {
+                let action = match key {
+                    NamedKey::Enter => Action::Enter,
+                    NamedKey::Backspace if input_state.modifier_state.control_key() => {
+                        // TODO: Feels jank
+                        self.editor
+                            .set_selection(Selection::Normal(self.editor.cursor()));
+                        self.editor
+                            .action(&mut self.font_system, Action::Motion(Motion::PreviousWord));
+                        Action::Backspace
+                    }
+                    NamedKey::Backspace => Action::Backspace,
+                    NamedKey::Delete => Action::Delete,
+                    NamedKey::ArrowLeft if input_state.modifier_state.control_key() => {
+                        Action::Motion(Motion::PreviousWord)
+                    }
+                    NamedKey::ArrowRight if input_state.modifier_state.control_key() => {
+                        Action::Motion(Motion::NextWord)
+                    }
+                    NamedKey::ArrowLeft => Action::Motion(Motion::Left),
+                    NamedKey::ArrowRight => Action::Motion(Motion::Right),
+                    NamedKey::ArrowUp => Action::Motion(Motion::Up),
+                    NamedKey::ArrowDown => Action::Motion(Motion::Down),
+                    NamedKey::Home => Action::Motion(Motion::Home),
+                    NamedKey::End => Action::Motion(Motion::End),
+                    NamedKey::PageUp => Action::Motion(Motion::PageUp),
+                    NamedKey::PageDown => Action::Motion(Motion::PageDown),
+                    _ => {
+                        return match key.to_text() {
+                            Some(key) => {
+                                self.editor.insert_string(key, attrs);
+                                true
+                            }
+                            None => false,
+                        }
+                    }
+                };
+                self.editor.action(&mut self.font_system, action);
             }
-            Key::Named(key) => match key.to_text() {
-                Some(key) => {
-                    self.editor
-                        .insert_string(key, Some(AttrsList::new(self.attrs)));
-                    true
-                }
-                None => false,
-            },
-            _ => false,
+            _ => return false, // No changes
         }
+        true
     }
 
     fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect) {
@@ -68,7 +98,7 @@ impl Interactive for Editor<'_> {
         pixmap.fill_rect(rect, paint, Transform::identity(), None);
 
         let mut editor = self.editor.borrow_with(&mut self.font_system);
-        let metrics = self.metrics.clone().scale(scale_factor as f32);
+        let metrics = self.metrics.scale(scale_factor as f32);
         if metrics != editor.with_buffer(|buf| buf.metrics()) {
             editor.with_buffer_mut(|buf| buf.set_metrics(metrics));
         }
@@ -86,7 +116,7 @@ impl Interactive for Editor<'_> {
                 paint.set_color_rgba8(colour.b(), colour.g(), colour.r(), colour.a());
                 pixmap.fill_rect(
                     Rect::from_xywh(x as f32, y as f32, w as f32, h as f32).unwrap(),
-                    &paint,
+                    paint,
                     transformation,
                     None,
                 );
@@ -125,7 +155,7 @@ impl Interactive for Editor<'_> {
                         (end_y - start_y) as f32,
                     )
                     .unwrap(),
-                    &paint,
+                    paint,
                     transformation,
                     None,
                 );
