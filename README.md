@@ -2,8 +2,7 @@
 
 ![The Exalted logo](./exalted.png)
 
-An experiment in implementing a code editor using just a 2D graphics library and
-a font rendering library (`tiny-skia` and `rusttype` respectively).
+An experiment in implementing a graphical code editor from scratch.
 
 ## Inspiration
 
