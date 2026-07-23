@@ -5,14 +5,13 @@ edition = "2021"
 
 [profile.release]
 codegen-units = 1
-strip = "symbols"
 lto = "fat"
 
 [dependencies]
-cosmic-text = "0.12"
+cosmic-text = "0.19"
 crop = "0.4"
 image = "0.25"
 softbuffer = "0.4"
-taffy = { version = "0.5", features = [ "grid", "flexbox" ] }
-tiny-skia = "0.11"
+taffy = { version = "0.12", features = [ "grid", "flexbox" ] }
+tiny-skia = "0.12"
 winit = "0.30"
