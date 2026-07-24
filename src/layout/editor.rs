@@ -18,6 +18,13 @@ pub struct Editor<'buffer> {
     metrics: Metrics,
     editor: CTEditor<'buffer>,
     attrs: Attrs<'buffer>,
+    mode: Mode,
+}
+
+#[derive(PartialEq)]
+enum Mode {
+    Insert,
+    Select,
 }
 
 impl Editor<'_> {
@@ -27,13 +34,16 @@ impl Editor<'_> {
         let mut font_system = FontSystem::new();
         let buffer = Buffer::new(&mut font_system, metrics_scaled);
         let editor = CTEditor::new(buffer);
+        let attrs = Attrs::new().family(cosmic_text::Family::Monospace);
+        let mode = Mode::Insert;
 
         Self {
             font_system,
             swash_cache: SwashCache::new(),
             metrics,
             editor,
-            attrs: Attrs::new().family(cosmic_text::Family::Monospace),
+            attrs,
+            mode,
         }
     }
 }
@@ -50,6 +60,7 @@ impl Interactive for Editor<'_> {
             Key::Character(key) => self.editor.insert_string(key.as_str(), attrs),
             Key::Named(key) => {
                 let action = match key {
+                    NamedKey::Escape => Action::Escape,
                     NamedKey::Enter => Action::Enter,
                     NamedKey::Backspace if input_state.modifier_state.control_key() => {
                         // TODO: Feels jank
@@ -57,20 +68,102 @@ impl Interactive for Editor<'_> {
                             .set_selection(Selection::Normal(self.editor.cursor()));
                         self.editor
                             .action(&mut self.font_system, Action::Motion(Motion::PreviousWord));
+                        self.mode = Mode::Insert;
                         Action::Backspace
                     }
-                    NamedKey::Backspace => Action::Backspace,
+                    NamedKey::Backspace => {
+                        self.mode = Mode::Insert;
+                        Action::Backspace
+                    }
                     NamedKey::Delete => Action::Delete,
+                    NamedKey::ArrowLeft
+                        if input_state.modifier_state.control_key()
+                            && input_state.modifier_state.shift_key() =>
+                    {
+                        if self.mode == Mode::Insert {
+                            self.editor
+                                .set_selection(Selection::Normal(self.editor.cursor()));
+                            self.mode = Mode::Select;
+                        }
+                        Action::Motion(Motion::PreviousWord)
+                    }
+                    NamedKey::ArrowRight
+                        if input_state.modifier_state.control_key()
+                            && input_state.modifier_state.shift_key() =>
+                    {
+                        if self.mode == Mode::Insert {
+                            self.editor
+                                .set_selection(Selection::Normal(self.editor.cursor()));
+                            self.mode = Mode::Select;
+                        }
+                        Action::Motion(Motion::NextWord)
+                    }
                     NamedKey::ArrowLeft if input_state.modifier_state.control_key() => {
                         Action::Motion(Motion::PreviousWord)
                     }
                     NamedKey::ArrowRight if input_state.modifier_state.control_key() => {
                         Action::Motion(Motion::NextWord)
                     }
-                    NamedKey::ArrowLeft => Action::Motion(Motion::Left),
-                    NamedKey::ArrowRight => Action::Motion(Motion::Right),
-                    NamedKey::ArrowUp => Action::Motion(Motion::Up),
-                    NamedKey::ArrowDown => Action::Motion(Motion::Down),
+                    NamedKey::ArrowLeft if input_state.modifier_state.shift_key() => {
+                        if self.mode == Mode::Insert {
+                            self.editor
+                                .set_selection(Selection::Normal(self.editor.cursor()));
+                            self.mode = Mode::Select;
+                        }
+                        Action::Motion(Motion::Left)
+                    }
+                    NamedKey::ArrowRight if input_state.modifier_state.shift_key() => {
+                        if self.mode == Mode::Insert {
+                            self.editor
+                                .set_selection(Selection::Normal(self.editor.cursor()));
+                            self.mode = Mode::Select;
+                        }
+                        Action::Motion(Motion::Right)
+                    }
+                    NamedKey::ArrowUp if input_state.modifier_state.shift_key() => {
+                        if self.mode == Mode::Insert {
+                            self.editor
+                                .set_selection(Selection::Normal(self.editor.cursor()));
+                            self.mode = Mode::Select;
+                        }
+                        Action::Motion(Motion::Up)
+                    }
+                    NamedKey::ArrowDown if input_state.modifier_state.shift_key() => {
+                        if self.mode == Mode::Insert {
+                            self.editor
+                                .set_selection(Selection::Normal(self.editor.cursor()));
+                            self.mode = Mode::Select;
+                        }
+                        Action::Motion(Motion::Down)
+                    }
+                    NamedKey::ArrowLeft => {
+                        if self.mode == Mode::Select {
+                            self.editor.set_selection(Selection::None);
+                            self.mode = Mode::Insert;
+                        }
+                        Action::Motion(Motion::Left)
+                    }
+                    NamedKey::ArrowRight => {
+                        if self.mode == Mode::Select {
+                            self.editor.set_selection(Selection::None);
+                            self.mode = Mode::Insert;
+                        }
+                        Action::Motion(Motion::Right)
+                    }
+                    NamedKey::ArrowUp => {
+                        if self.mode == Mode::Select {
+                            self.editor.set_selection(Selection::None);
+                            self.mode = Mode::Insert;
+                        }
+                        Action::Motion(Motion::Up)
+                    }
+                    NamedKey::ArrowDown => {
+                        if self.mode == Mode::Select {
+                            self.editor.set_selection(Selection::None);
+                            self.mode = Mode::Insert;
+                        }
+                        Action::Motion(Motion::Down)
+                    }
                     NamedKey::Home => Action::Motion(Motion::Home),
                     NamedKey::End => Action::Motion(Motion::End),
                     NamedKey::PageUp => Action::Motion(Motion::PageUp),
