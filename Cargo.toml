@@ -3,15 +3,19 @@ name = "exalted"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev]
+opt-level = 2
+
 [profile.release]
 codegen-units = 1
 lto = "fat"
 
 [dependencies]
+arboard = { version = "3.6", features = ["wayland-data-control"] }
 cosmic-text = "0.19"
 crop = "0.4"
 image = "0.25"
 softbuffer = "0.4"
-taffy = { version = "0.12", features = [ "grid", "flexbox" ] }
+taffy = { version = "0.12", features = ["grid", "flexbox"] }
 tiny-skia = "0.12"
 winit = "0.30"
