@@ -1,6 +1,6 @@
 use tiny_skia::{Paint, PixmapMut, Rect, Transform};
 use winit::{
-    event::ElementState,
+    event::{ElementState, MouseButton},
     keyboard::{Key, SmolStr},
 };
 
@@ -11,11 +11,22 @@ use super::Interactive;
 pub struct StatusBar;
 
 impl Interactive for StatusBar {
-    fn handle_mouse_event(&mut self, _input_state: &InputState, _new_state: ElementState) -> bool {
+    fn handle_mouse_input(
+        &mut self,
+        _input_state: &InputState,
+        _button: MouseButton,
+        _new_state: ElementState,
+    ) -> bool {
         false
     }
 
-    fn handle_keyboard_event(&mut self, _input_state: &InputState, _key: Key<SmolStr>) -> bool {
+    fn handle_cursor_moved(&mut self, _input_state: &InputState) -> bool {
+        false
+    }
+
+    fn handle_scroll(&mut self, _input_state: &InputState, _pixel_delta: f32) {}
+
+    fn handle_keyboard_input(&mut self, _input_state: &InputState, _key: Key<SmolStr>) -> bool {
         false
     }
 

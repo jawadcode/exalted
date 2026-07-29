@@ -1,10 +1,11 @@
+use arboard::Clipboard;
 use cosmic_text::{
     Action, Attrs, AttrsList, Buffer, Color as CTColor, Edit, Editor as CTEditor, FontSystem,
     Metrics, Motion, Selection, SwashCache,
 };
 use tiny_skia::{Paint, PixmapMut, Rect, Transform};
 use winit::{
-    event::ElementState,
+    event::{ElementState, MouseButton},
     keyboard::{Key, NamedKey, SmolStr},
 };
 
@@ -16,9 +17,10 @@ pub struct Editor<'buffer> {
     font_system: FontSystem,
     swash_cache: SwashCache,
     metrics: Metrics,
-    editor: CTEditor<'buffer>,
     attrs: Attrs<'buffer>,
+    editor: CTEditor<'buffer>,
     mode: Mode,
+    clipboard: Clipboard,
 }
 
 #[derive(PartialEq)]
@@ -33,31 +35,88 @@ impl Editor<'_> {
         let metrics_scaled = metrics.scale(scale_factor as f32);
         let mut font_system = FontSystem::new();
         let buffer = Buffer::new(&mut font_system, metrics_scaled);
-        let editor = CTEditor::new(buffer);
         let attrs = Attrs::new().family(cosmic_text::Family::Monospace);
+        let editor = CTEditor::new(buffer);
         let mode = Mode::Insert;
+        let clipboard = Clipboard::new().expect("Failed to initialise clipboard");
 
         Self {
             font_system,
             swash_cache: SwashCache::new(),
             metrics,
-            editor,
             attrs,
+            editor,
             mode,
+            clipboard,
         }
     }
 }
 
 impl Interactive for Editor<'_> {
-    fn handle_mouse_event(&mut self, _input_state: &InputState, _new_state: ElementState) -> bool {
-        false
+    fn handle_mouse_input(
+        &mut self,
+        input_state: &InputState,
+        button: MouseButton,
+        new_state: ElementState,
+    ) -> bool {
+        if new_state == ElementState::Pressed && button == MouseButton::Left {
+            self.editor.action(
+                &mut self.font_system,
+                Action::Click {
+                    x: input_state.mouse_pos_x as i32,
+                    y: input_state.mouse_pos_y as i32,
+                },
+            );
+            true
+        } else {
+            false
+        }
     }
 
-    fn handle_keyboard_event(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool {
+    fn handle_cursor_moved(&mut self, input_state: &InputState) -> bool {
+        if input_state.mouse_left_state == ElementState::Pressed {
+            self.editor.action(
+                &mut self.font_system,
+                Action::Drag {
+                    x: input_state.mouse_pos_x as i32,
+                    y: input_state.mouse_pos_y as i32,
+                },
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    fn handle_scroll(&mut self, _input_state: &InputState, pixel_delta: f32) {
+        self.editor.action(
+            &mut self.font_system,
+            Action::Scroll {
+                pixels: -pixel_delta,
+            },
+        );
+    }
+
+    fn handle_keyboard_input(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool {
         let attrs = Some(AttrsList::new(&self.attrs));
-        // let attrs = None;
         match key {
-            Key::Character(key) => self.editor.insert_string(key.as_str(), attrs),
+            Key::Character(key) => {
+                let key = key.as_str();
+                match key {
+                    "c" if input_state.modifier_state.control_key() => {
+                        self.editor
+                            .copy_selection()
+                            .map(|selection| self.clipboard.set_text(selection));
+                    }
+                    "v" if input_state.modifier_state.control_key() => {
+                        let _ = self
+                            .clipboard
+                            .get_text()
+                            .map(|text| self.editor.insert_string(&text, attrs));
+                    }
+                    key => self.editor.insert_string(key, attrs),
+                }
+            }
             Key::Named(key) => {
                 let action = match key {
                     NamedKey::Escape => Action::Escape,

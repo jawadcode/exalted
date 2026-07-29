@@ -9,27 +9,30 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::slice;
 use tiny_skia::{Paint, PixmapMut, Rect};
-use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent};
+use winit::dpi::PhysicalPosition;
+use winit::event::{
+    DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent,
+};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState};
 use winit::window::{Icon, Window};
 
-use layout::{Interactive, LayoutEngine};
+use layout::{Interactive, RootLayout};
 
 static EXALTED_ICON_PNG: &[u8] = include_bytes!("../exalted.png");
 
 struct WindowState {
     window: Rc<Window>,
     surface: Surface<Rc<Window>, Rc<Window>>,
-    layout: LayoutEngine,
+    layout: RootLayout,
     input: InputState,
 }
 
+// TODO: Maybe factor out mouse_pos_{x,y} into separate struct for easier mapping per-node
 struct InputState {
     mouse_left_state: ElementState,
     mouse_pos_x: f64,
     mouse_pos_y: f64,
-    unapplied_scroll_data: f64,
     modifier_state: ModifiersState,
 }
 
@@ -39,7 +42,6 @@ impl Default for InputState {
             mouse_left_state: ElementState::Released,
             mouse_pos_x: 0.0,
             mouse_pos_y: 0.0,
-            unapplied_scroll_data: 0.0,
             modifier_state: ModifiersState::empty(),
         }
     }
@@ -59,7 +61,7 @@ fn init_state(elwt: &ActiveEventLoop) -> WindowState {
 
     let context = Context::new(window.clone()).unwrap();
     let surface = Surface::new(&context, window.clone()).unwrap();
-    let layout = LayoutEngine::new(window.scale_factor());
+    let layout = RootLayout::new(window.scale_factor());
     let input = InputState::default();
 
     WindowState {
@@ -135,10 +137,11 @@ fn event_loop_fn(
                         }
                         KeyEvent {
                             state: ElementState::Pressed,
-                            repeat: false,
+                            // Code was written a while ago so not sure why this was here
+                            // repeat: false,
                             logical_key,
                             ..
-                        } => layout.handle_keyboard_event(input, logical_key),
+                        } => layout.handle_keyboard_input(input, logical_key),
                         _ => false,
                     } {
                         window.request_redraw()
@@ -147,16 +150,28 @@ fn event_loop_fn(
                 WindowEvent::CursorMoved { position, .. } => {
                     input.mouse_pos_x = position.x;
                     input.mouse_pos_y = position.y;
-                }
-                WindowEvent::MouseInput { state, button, .. } if state.is_pressed() => {
-                    if button == MouseButton::Left && layout.handle_mouse_event(input, state) {
+                    if layout.handle_cursor_moved(input) {
                         window.request_redraw();
                     }
-                    input.mouse_left_state = state;
                 }
-                WindowEvent::MouseWheel { /* delta, */ .. } => {
-                    input.unapplied_scroll_data = 0.0;
-                    todo!("Implement scrolling")
+                WindowEvent::MouseInput { state, button, .. } => {
+                    if button == MouseButton::Left {
+                        input.mouse_left_state = state;
+                    }
+                    if layout.handle_mouse_input(input, button, state) {
+                        window.request_redraw();
+                    }
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let pixel_delta = match delta {
+                        MouseScrollDelta::LineDelta(_, y) => y * 20.0,
+                        MouseScrollDelta::PixelDelta(PhysicalPosition { x: _, y }) => y as f32,
+                    };
+
+                    if pixel_delta != 0.0 {
+                        layout.handle_scroll(input, pixel_delta);
+                        window.request_redraw();
+                    }
                 }
                 WindowEvent::CloseRequested => elwt.exit(),
                 _ => (),

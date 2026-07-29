@@ -8,19 +8,30 @@ use status_bar::StatusBar;
 use taffy::{NodeId, TaffyTree};
 use tiny_skia::{Paint, PixmapMut, Rect};
 use winit::{
-    event::ElementState,
+    event::{ElementState, MouseButton},
     keyboard::{Key, SmolStr},
 };
 
 use crate::InputState;
 
 pub trait Interactive {
-    fn handle_mouse_event(&mut self, input_state: &InputState, new_state: ElementState) -> bool;
-    fn handle_keyboard_event(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool;
+    fn handle_mouse_input(
+        &mut self,
+        input_state: &InputState,
+        button: MouseButton,
+        new_state: ElementState,
+    ) -> bool;
+
+    fn handle_cursor_moved(&mut self, input_state: &InputState) -> bool;
+
+    fn handle_scroll(&mut self, input_state: &InputState, pixel_delta: f32);
+
+    fn handle_keyboard_input(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool;
+
     fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect);
 }
 
-pub struct LayoutEngine {
+pub struct RootLayout {
     tree: TaffyTree<Box<dyn Interactive>>,
     root: NodeId,
     nav_bar: NodeId,
@@ -35,7 +46,7 @@ enum Section {
     StatusBar,
 }
 
-impl LayoutEngine {
+impl RootLayout {
     pub fn new(scale_factor: f64) -> Self {
         use taffy::prelude::*;
 
@@ -97,28 +108,6 @@ impl LayoutEngine {
         }
     }
 
-    fn get_rect(&self, node: NodeId) -> Rect {
-        let layout = self.tree.layout(node).unwrap();
-        Rect::from_xywh(
-            layout.location.x,
-            layout.location.y,
-            layout.size.width,
-            layout.size.height,
-        )
-        .unwrap()
-    }
-
-    fn is_in_rect(&self, node: NodeId, pos_x: f64, pos_y: f64) -> bool {
-        let node_rect = self.get_rect(node);
-        let pos_x = pos_x as f32;
-        let pos_y = pos_y as f32;
-
-        pos_x > node_rect.x()
-            && pos_x < node_rect.x() + node_rect.width()
-            && pos_y > node_rect.y()
-            && pos_y < node_rect.y() + node_rect.height()
-    }
-
     pub fn compute_layout(&mut self, width: f32, height: f32) {
         use taffy::{geometry::Size, prelude::length};
 
@@ -132,38 +121,111 @@ impl LayoutEngine {
             )
             .unwrap();
     }
-}
 
-impl Interactive for LayoutEngine {
-    fn handle_mouse_event(&mut self, input_state: &InputState, new_state: ElementState) -> bool {
+    fn get_hovered_node(&mut self, input_state: &InputState) -> NodeId {
         let pos_x = input_state.mouse_pos_x;
         let pos_y = input_state.mouse_pos_y;
         if self.is_in_rect(self.editor, pos_x, pos_y) {
             self.focused = Section::Editor;
-            self.tree.get_node_context_mut(self.editor)
+            self.editor
         } else if self.is_in_rect(self.nav_bar, pos_x, pos_y) {
             self.focused = Section::NavBar;
-            self.tree.get_node_context_mut(self.nav_bar)
+            self.nav_bar
         } else if self.is_in_rect(self.status_bar, pos_x, pos_y) {
             self.focused = Section::StatusBar;
-            self.tree.get_node_context_mut(self.status_bar)
+            self.status_bar
         } else {
-            // I want to see if this is ever triggered
-            unreachable!("oopsie")
+            // Curious as to whether this can ever be triggered
+            unreachable!("Inexhaustive mouse location check")
         }
-        .unwrap()
-        .handle_mouse_event(input_state, new_state)
     }
 
-    fn handle_keyboard_event(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool {
+    fn get_focused_node(&mut self) -> NodeId {
+        match self.focused {
+            Section::NavBar => self.nav_bar,
+            Section::Editor => self.editor,
+            Section::StatusBar => self.status_bar,
+        }
+    }
+
+    fn map_mouse_pos(&self, input_state: &InputState, node: NodeId) -> InputState {
+        let layout = self.tree.layout(node).unwrap();
+
+        InputState {
+            mouse_pos_x: input_state.mouse_pos_x - layout.location.x as f64,
+            mouse_pos_y: input_state.mouse_pos_y - layout.location.y as f64,
+            ..*input_state
+        }
+    }
+
+    fn is_in_rect(&self, node: NodeId, pos_x: f64, pos_y: f64) -> bool {
+        let node_rect = self.get_rect(node);
+        let pos_x = pos_x as f32;
+        let pos_y = pos_y as f32;
+
+        pos_x > node_rect.x()
+            && pos_x < node_rect.x() + node_rect.width()
+            && pos_y > node_rect.y()
+            && pos_y < node_rect.y() + node_rect.height()
+    }
+
+    fn get_rect(&self, node: NodeId) -> Rect {
+        let layout = self.tree.layout(node).unwrap();
+        Rect::from_xywh(
+            layout.location.x,
+            layout.location.y,
+            layout.size.width,
+            layout.size.height,
+        )
+        .unwrap()
+    }
+}
+
+impl Interactive for RootLayout {
+    fn handle_mouse_input(
+        &mut self,
+        input_state: &InputState,
+        button: MouseButton,
+        new_state: ElementState,
+    ) -> bool {
+        let node = self.get_hovered_node(input_state);
+        let input_state = self.map_mouse_pos(input_state, node);
+
         self.tree
-            .get_node_context_mut(match self.focused {
-                Section::NavBar => self.nav_bar,
-                Section::Editor => self.editor,
-                Section::StatusBar => self.status_bar,
-            })
+            .get_node_context_mut(node)
             .unwrap()
-            .handle_keyboard_event(input_state, key)
+            .handle_mouse_input(&input_state, button, new_state)
+    }
+
+    fn handle_cursor_moved(&mut self, input_state: &InputState) -> bool {
+        // Not entirely sure about this, should cursor movement events be sent only to the focused node?
+        let node = self.get_focused_node();
+        let input_state = self.map_mouse_pos(&input_state, node);
+
+        self.tree
+            .get_node_context_mut(node)
+            .unwrap()
+            .handle_cursor_moved(&input_state)
+    }
+
+    fn handle_scroll(&mut self, input_state: &InputState, pixel_delta: f32) {
+        let node = self.get_hovered_node(input_state);
+        let input_state = self.map_mouse_pos(&input_state, node);
+
+        self.tree
+            .get_node_context_mut(node)
+            .unwrap()
+            .handle_scroll(&input_state, pixel_delta)
+    }
+
+    fn handle_keyboard_input(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool {
+        let node = self.get_focused_node();
+        let input_state = self.map_mouse_pos(&input_state, node);
+
+        self.tree
+            .get_node_context_mut(node)
+            .unwrap()
+            .handle_keyboard_input(&input_state, key)
     }
 
     fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect) {
