@@ -300,6 +300,40 @@ impl Interactive for Editor<'_> {
             CTColor::rgba(0, 128, 196, 255),
         );
 
+        const SCROLLBAR_WIDTH: f32 = 15.0;
+        {
+            let mut start_line_opt = None;
+            let mut end_line = 0;
+            self.editor.with_buffer(|buffer| {
+                for run in buffer.layout_runs() {
+                    end_line = run.line_i;
+                    if start_line_opt.is_none() {
+                        start_line_opt = Some(end_line);
+                    }
+                }
+            });
+
+            let start_line = start_line_opt.unwrap_or(end_line);
+            let lines = self.editor.with_buffer(|buffer| buffer.lines.len());
+            let start_y = (start_line * rect.height() as usize) / lines;
+            let end_y = (end_line * rect.height() as usize) / lines;
+            paint.set_color_rgba8(0xFF, 0xFF, 0xFF, 0x40);
+            if end_y > start_y {
+                pixmap.fill_rect(
+                    Rect::from_xywh(
+                        rect.width() as f32 - SCROLLBAR_WIDTH * scale_factor as f32,
+                        start_y as f32,
+                        SCROLLBAR_WIDTH * scale_factor as f32,
+                        (end_y - start_y) as f32,
+                    )
+                    .unwrap(),
+                    &paint,
+                    transform,
+                    None,
+                );
+            }
+        }
+
         // TODO: Accessibility
         // if let Some((x, y)) = editor.cursor_position() {
         //     window.set_ime_cursor_area(PhysicalPosition::new(x, y), PhysicalSize::new(20, 20));
