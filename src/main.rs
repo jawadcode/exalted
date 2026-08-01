@@ -164,7 +164,7 @@ fn event_loop_fn(
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
                     let pixel_delta = match delta {
-                        MouseScrollDelta::LineDelta(_, y) => y * 20.0,
+                        MouseScrollDelta::LineDelta(_, y) => y * 50.0,
                         MouseScrollDelta::PixelDelta(PhysicalPosition { x: _, y }) => y as f32,
                     };
 

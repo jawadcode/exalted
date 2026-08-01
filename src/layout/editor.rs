@@ -1,9 +1,9 @@
 use arboard::Clipboard;
 use cosmic_text::{
-    Action, Attrs, AttrsList, Buffer, Color as CTColor, Edit, Editor as CTEditor, FontSystem,
-    Metrics, Motion, Selection, SwashCache,
+    Action, Attrs, AttrsList, Buffer, Color as CTColor, Edit, Editor as CTEditor, Family,
+    FontSystem, Metrics, Motion, PhysicalGlyph, Renderer, Selection, SwashCache, SwashContent,
 };
-use tiny_skia::{Paint, PixmapMut, Rect, Transform};
+use tiny_skia::{Paint, PixmapMut, PixmapPaint, PixmapRef, Rect, Transform};
 use winit::{
     event::{ElementState, MouseButton},
     keyboard::{Key, NamedKey, SmolStr},
@@ -35,7 +35,7 @@ impl Editor<'_> {
         let metrics_scaled = metrics.scale(scale_factor as f32);
         let mut font_system = FontSystem::new();
         let buffer = Buffer::new(&mut font_system, metrics_scaled);
-        let attrs = Attrs::new().family(cosmic_text::Family::Monospace);
+        let attrs = Attrs::new().family(Family::Monospace);
         let editor = CTEditor::new(buffer);
         let mode = Mode::Insert;
         let clipboard = Clipboard::new().expect("Failed to initialise clipboard");
@@ -244,74 +244,119 @@ impl Interactive for Editor<'_> {
         true
     }
 
-    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect) {
-        let transformation = Transform::from_translate(rect.x(), rect.y());
+    fn render<'draw>(
+        &mut self,
+        pixmap: &mut PixmapMut<'draw>,
+        paint: &mut Paint<'draw>,
+        scale_factor: f64,
+        rect: Rect,
+    ) {
+        let transform = Transform::from_translate(rect.x(), rect.y());
         paint.set_color_rgba8(24, 24, 24, 255);
         pixmap.fill_rect(rect, paint, Transform::identity(), None);
-
-        let mut editor = self.editor.borrow_with(&mut self.font_system);
-        let metrics = self.metrics.scale(scale_factor as f32);
-        if metrics != editor.with_buffer(|buf| buf.metrics()) {
-            editor.with_buffer_mut(|buf| buf.set_metrics(metrics));
+        {
+            let mut editor = self.editor.borrow_with(&mut (*self).font_system);
+            let metrics = self.metrics.scale(scale_factor as f32);
+            if metrics != editor.with_buffer(|buf| buf.metrics()) {
+                editor.with_buffer_mut(|buf| buf.set_metrics(metrics));
+            }
         }
 
-        editor.with_buffer_mut(|buf| buf.set_size(Some(rect.width()), Some(rect.height())));
+        self.editor
+            .with_buffer_mut(|buf| buf.set_size(Some(rect.width()), Some(rect.height())));
         paint.anti_alias = false;
-        editor.shape_as_needed(true);
-        editor.draw(
-            &mut self.swash_cache,
+        self.editor.shape_as_needed(&mut self.font_system, true);
+        // editor.draw(
+        //     &mut self.swash_cache,
+        //     CTColor::rgba(200, 200, 200, 255),
+        //     CTColor::rgba(255, 255, 255, 255),
+        //     CTColor::rgba(128, 63, 16, 100),
+        //     CTColor::rgba(0, 128, 196, 255),
+        //     |x, y, w, h, colour| {
+        //         paint.set_color_rgba8(colour.b(), colour.g(), colour.r(), colour.a());
+        //         pixmap.fill_rect(
+        //             Rect::from_xywh(x as f32, y as f32, w as f32, h as f32).unwrap(),
+        //             paint,
+        //             transformation,
+        //             None,
+        //         );
+        //     },
+        // );
+
+        let mut editor_renderer = EditorRenderer {
+            swash_cache: &mut self.swash_cache,
+            font_system: &mut self.font_system,
+            pixmap,
+            paint,
+            pixmap_paint: &PixmapPaint::default(),
+            scale_factor,
+            transform,
+        };
+        self.editor.render(
+            &mut editor_renderer,
             CTColor::rgba(200, 200, 200, 255),
             CTColor::rgba(255, 255, 255, 255),
             CTColor::rgba(128, 63, 16, 100),
             CTColor::rgba(0, 128, 196, 255),
-            |x, y, w, h, colour| {
-                paint.set_color_rgba8(colour.b(), colour.g(), colour.r(), colour.a());
-                pixmap.fill_rect(
-                    Rect::from_xywh(x as f32, y as f32, w as f32, h as f32).unwrap(),
-                    paint,
-                    transformation,
-                    None,
-                );
-            },
         );
 
         // TODO: Accessibility
         // if let Some((x, y)) = editor.cursor_position() {
         //     window.set_ime_cursor_area(PhysicalPosition::new(x, y), PhysicalSize::new(20, 20));
         // }
+    }
+}
 
-        {
-            let mut start_line_opt = None;
-            let mut end_line = 0;
-            editor.with_buffer(|buffer| {
-                for run in buffer.layout_runs() {
-                    end_line = run.line_i;
-                    if start_line_opt.is_none() {
-                        start_line_opt = Some(end_line);
-                    }
-                }
-            });
+struct EditorRenderer<'draw, 'render> {
+    pixmap: &'render mut PixmapMut<'draw>,
+    paint: &'render mut Paint<'draw>,
+    pixmap_paint: &'render PixmapPaint,
+    font_system: &'render mut FontSystem,
+    swash_cache: &'render mut SwashCache,
+    scale_factor: f64,
+    transform: Transform,
+    // rect: Rect,
+}
 
-            let start_line = start_line_opt.unwrap_or(end_line);
-            let lines = editor.with_buffer(|buffer| buffer.lines.len());
-            let start_y = (start_line * rect.height() as usize) / lines;
-            let end_y = (end_line * rect.height() as usize) / lines;
-            let scrollbar_width = 12.0;
-            paint.set_color_rgba8(0xFF, 0xFF, 0xFF, 0x40);
-            if end_y > start_y {
-                pixmap.fill_rect(
-                    Rect::from_xywh(
-                        rect.width() - scrollbar_width * scale_factor as f32,
-                        start_y as f32,
-                        scrollbar_width * scale_factor as f32,
-                        (end_y - start_y) as f32,
-                    )
-                    .unwrap(),
-                    paint,
-                    transformation,
-                    None,
-                );
-            }
+impl<'draw, 'render> EditorRenderer<'draw, 'render> {}
+
+impl Renderer for EditorRenderer<'_, '_> {
+    fn rectangle(&mut self, x: i32, y: i32, w: u32, h: u32, color: CTColor) {
+        let colour = color;
+        self.paint
+            .set_color_rgba8(colour.b(), colour.g(), colour.r(), colour.a());
+        self.pixmap.fill_rect(
+            Rect::from_xywh(x as f32, y as f32, w as f32, h as f32).unwrap(),
+            self.paint,
+            self.transform,
+            None,
+        );
+    }
+
+    fn glyph(&mut self, physical_glyph: PhysicalGlyph, color: CTColor) {
+        let image = self
+            .swash_cache
+            .get_image(self.font_system, physical_glyph.cache_key)
+            .as_ref()
+            .unwrap();
+        if image.content != SwashContent::Mask || image.data.is_empty() {
+            return;
         }
+
+        let mut rgba = Vec::with_capacity(image.data.len() * 4);
+        for &byte in &image.data {
+            rgba.extend_from_slice(&[byte, byte, byte, byte]);
+        }
+
+        let pixmap =
+            PixmapRef::from_bytes(&rgba, image.placement.width, image.placement.height).unwrap();
+        self.pixmap.draw_pixmap(
+            physical_glyph.x + image.placement.left,
+            physical_glyph.y - image.placement.top,
+            pixmap,
+            self.pixmap_paint,
+            self.transform,
+            None,
+        );
     }
 }

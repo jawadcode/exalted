@@ -28,7 +28,14 @@ pub trait Interactive {
 
     fn handle_keyboard_input(&mut self, input_state: &InputState, key: Key<SmolStr>) -> bool;
 
-    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect);
+    // Is this a weird lifetime param name? No idea
+    fn render<'draw>(
+        &mut self,
+        pixmap: &mut PixmapMut<'draw>,
+        paint: &mut Paint<'draw>,
+        scale_factor: f64,
+        rect: Rect,
+    );
 }
 
 pub struct RootLayout {
@@ -122,17 +129,28 @@ impl RootLayout {
             .unwrap();
     }
 
-    fn get_hovered_node(&mut self, input_state: &InputState) -> NodeId {
-        let pos_x = input_state.mouse_pos_x;
-        let pos_y = input_state.mouse_pos_y;
+    fn get_hovered_node<const CHANGE_FOCUS: bool>(&mut self, input_state: &InputState) -> NodeId {
+        let root = self.tree.layout(self.root).unwrap();
+
+        let pos_x = input_state.mouse_pos_x.max(0.0).min(root.size.width as f64);
+        let pos_y = input_state
+            .mouse_pos_y
+            .max(0.0)
+            .min(root.size.height as f64);
         if self.is_in_rect(self.editor, pos_x, pos_y) {
-            self.focused = Section::Editor;
+            if CHANGE_FOCUS {
+                self.focused = Section::Editor;
+            }
             self.editor
         } else if self.is_in_rect(self.nav_bar, pos_x, pos_y) {
-            self.focused = Section::NavBar;
+            if CHANGE_FOCUS {
+                self.focused = Section::Editor;
+            }
             self.nav_bar
         } else if self.is_in_rect(self.status_bar, pos_x, pos_y) {
-            self.focused = Section::StatusBar;
+            if CHANGE_FOCUS {
+                self.focused = Section::Editor;
+            }
             self.status_bar
         } else {
             // Curious as to whether this can ever be triggered
@@ -163,9 +181,9 @@ impl RootLayout {
         let pos_x = pos_x as f32;
         let pos_y = pos_y as f32;
 
-        pos_x > node_rect.x()
+        pos_x >= node_rect.x()
             && pos_x < node_rect.x() + node_rect.width()
-            && pos_y > node_rect.y()
+            && pos_y >= node_rect.y()
             && pos_y < node_rect.y() + node_rect.height()
     }
 
@@ -188,7 +206,7 @@ impl Interactive for RootLayout {
         button: MouseButton,
         new_state: ElementState,
     ) -> bool {
-        let node = self.get_hovered_node(input_state);
+        let node = self.get_hovered_node::<true>(input_state);
         let input_state = self.map_mouse_pos(input_state, node);
 
         self.tree
@@ -199,7 +217,7 @@ impl Interactive for RootLayout {
 
     fn handle_cursor_moved(&mut self, input_state: &InputState) -> bool {
         // Not entirely sure about this, should cursor movement events be sent only to the focused node?
-        let node = self.get_focused_node();
+        let node = self.get_hovered_node::<false>(input_state);
         let input_state = self.map_mouse_pos(&input_state, node);
 
         self.tree
@@ -209,7 +227,7 @@ impl Interactive for RootLayout {
     }
 
     fn handle_scroll(&mut self, input_state: &InputState, pixel_delta: f32) {
-        let node = self.get_hovered_node(input_state);
+        let node = self.get_hovered_node::<false>(input_state);
         let input_state = self.map_mouse_pos(&input_state, node);
 
         self.tree
@@ -228,7 +246,13 @@ impl Interactive for RootLayout {
             .handle_keyboard_input(&input_state, key)
     }
 
-    fn render(&mut self, pixmap: &mut PixmapMut, paint: &mut Paint, scale_factor: f64, rect: Rect) {
+    fn render<'draw>(
+        &mut self,
+        pixmap: &mut PixmapMut<'draw>,
+        paint: &mut Paint<'draw>,
+        scale_factor: f64,
+        rect: Rect,
+    ) {
         self.compute_layout(rect.width(), rect.height());
 
         let nav_bar_rect = self.get_rect(self.nav_bar);
